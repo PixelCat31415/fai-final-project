@@ -15,6 +15,9 @@ def load_players(config, verbose=False):
     imported_players = []
 
     for i, player_conf in enumerate(config["players"]):
+        cls_name = None
+        path = None
+
         try:
             path = player_conf["path"]
             cls_name = player_conf["class"]

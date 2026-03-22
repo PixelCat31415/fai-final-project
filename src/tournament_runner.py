@@ -6,6 +6,7 @@ import multiprocessing as mp
 import queue
 import math
 from collections import defaultdict
+from typing import cast, Any
 from tqdm import tqdm
 from joblib import Parallel, delayed
 from src.engine import Engine
@@ -470,7 +471,7 @@ class RandomPartitionTournamentRunner(BaseTournamentRunner):
             
             # Kill the entire process group to prevent orphaned children
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                os.killpg(os.getpgid(cast(int, proc.pid)), signal.SIGTERM)
             except Exception:
                 proc.terminate()
             
@@ -478,7 +479,7 @@ class RandomPartitionTournamentRunner(BaseTournamentRunner):
             
             if proc.is_alive():
                 try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    os.killpg(os.getpgid(cast(int, proc.pid)), signal.SIGKILL)
                 except Exception:
                     proc.kill()
                 proc.join(0.5)
@@ -618,7 +619,7 @@ class RandomPartitionTournamentRunner(BaseTournamentRunner):
             
         return matchup_history
 
-    def run(self):
+    def run(self) -> Any:
         print(f"--- Starting Random Partition Tournament ({self.num_games_per_player} partitions per player) ---")
         print(f"Duplication Mode: {self.duplication_mode.upper()}")
         print(f"Workers: {self.tournament_config.get('num_workers', 1)}")
