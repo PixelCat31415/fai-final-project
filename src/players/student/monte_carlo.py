@@ -2,9 +2,9 @@ import random
 import time
 from typing import override
 
-from src.players.student.customized_engine import CustomizedEngine
-from src.players.student.customized_engine import N_CARDS
-from src.players.student.customized_engine import N_PLAYERS
+from .customized_engine import CustomizedEngine
+from .customized_engine import N_CARDS
+from .customized_engine import N_PLAYERS
 
 
 class MonteCarloPlayer:

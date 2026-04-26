@@ -1,0 +1,17 @@
+{
+    "outdir": "b12902043",
+    "items": [
+        {
+            "root": "../../src/players/student",
+            "dest": "",
+            "rules": [
+                "!__pycache__",
+                "!test/"
+            ]
+        },
+        {
+            "file": "README.md",
+            "dest": "README.md"
+        }
+    ]
+}
