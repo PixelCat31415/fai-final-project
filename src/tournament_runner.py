@@ -123,6 +123,7 @@ class BaseTournamentRunner:
             
         matchup_scores = [0] * self.n_players_per_game
         matchup_ranks = [0] * self.n_players_per_game
+        matchup_rank_squares = [0] * self.n_players_per_game
         
         # Local pairwise wins (to avoid modifying self directly when in a subprocess)
         local_pairwise_wins = {p_id: {p_id_2: 0.0 for p_id_2 in matchup_players_data} for p_id in matchup_players_data}
@@ -171,6 +172,7 @@ class BaseTournamentRunner:
                 for seat, score in enumerate(scores):
                     matchup_scores[seat] += score
                     matchup_ranks[seat] += ranks[seat]
+                    matchup_rank_squares[seat] += ranks[seat] * ranks[seat]
                     
                 # Track Pairwise pairwise logic
                 for i in range(len(scores)):
@@ -199,7 +201,7 @@ class BaseTournamentRunner:
                     raise
                 print(f"Error running game in matchup {matchup_players_data}: {e}")
                 
-        return matchup_scores, matchup_ranks, len(selected_perms), local_pairwise_wins, local_dq_counts, local_timeout_counts, local_exception_counts
+        return matchup_scores, matchup_ranks, matchup_rank_squares, len(selected_perms), local_pairwise_wins, local_dq_counts, local_timeout_counts, local_exception_counts
 
 
 class CombinationTournamentRunner(BaseTournamentRunner):
@@ -212,6 +214,7 @@ class CombinationTournamentRunner(BaseTournamentRunner):
                 "config_idx": i,
                 "total_score": 0,
                 "total_rank": 0,
+                "total_rank_sq": 0,
                 "games_played": 0,
                 "matchups_played": 0,
                 "dq_count": 0,
@@ -235,7 +238,7 @@ class CombinationTournamentRunner(BaseTournamentRunner):
         
         for idx, combo in enumerate(tqdm(combinations, desc="Running Matchups")):
             # combo is tuple of global indices
-            scores, ranks, n_games, local_wins, local_dqs, local_timeouts, local_exceptions = self._play_matchup_permutations(combo, n_cards, n_rounds_game)
+            scores, ranks, rank_squares, n_games, local_wins, local_dqs, local_timeouts, local_exceptions = self._play_matchup_permutations(combo, n_cards, n_rounds_game)
             
             # Aggregate local pairwise wins
             for p1, opp_wins in local_wins.items():
@@ -256,6 +259,7 @@ class CombinationTournamentRunner(BaseTournamentRunner):
                 global_p_id = combo[seat]
                 self.player_stats[global_p_id]["total_score"] += score
                 self.player_stats[global_p_id]["total_rank"] += ranks[seat]
+                self.player_stats[global_p_id]["total_rank_sq"] += rank_squares[seat]
                 self.player_stats[global_p_id]["games_played"] += n_games
                 self.player_stats[global_p_id]["matchups_played"] += 1
                 matchup_res_list.append({"id": global_p_id, "score": score, "rank": ranks[seat]})
@@ -273,13 +277,17 @@ class CombinationTournamentRunner(BaseTournamentRunner):
         for p in self.player_stats:
             p["avg_score"] = p["total_score"] / p["games_played"] if p["games_played"] > 0 else float('inf')
             p["avg_rank"] = p["total_rank"] / p["games_played"] if p["games_played"] > 0 else float('inf')
+            p["rank_variance"] = (
+                p["total_rank_sq"] / p["games_played"] - p["avg_rank"] * p["avg_rank"]
+                if p["games_played"] > 0 else float('inf')
+            )
         
         self.player_stats.sort(key=lambda x: (x["avg_rank"], x["avg_score"]))
         
         print(f"\nFinal Standings (Sorted by Avg Rank):")
-        print("-" * 110)
-        print(f"{'Rank':<5} {'ID':<5} {'Class':<22} {'Label':<9} {'Avg Rank':<9} {'Est. Elo':<9} {'Avg Score':<9} {'Games':<6} {'Note':<9}")
-        print("-" * 110)
+        print("-" * 122)
+        print(f"{'Rank':<5} {'ID':<5} {'Class':<22} {'Label':<9} {'Avg Rank':<9} {'Rank Var':<9} {'Est. Elo':<9} {'Avg Score':<9} {'Games':<6} {'Note':<9}")
+        print("-" * 122)
         
         for i, p in enumerate(self.player_stats):
             p_cls_name = self.player_configs[p["config_idx"]]["class"]
@@ -294,8 +302,8 @@ class CombinationTournamentRunner(BaseTournamentRunner):
             note_str = " ".join(notes)
             
             elo = p.get("est_elo", 1500)
-            print(f"{i+1:<5} {p['id']:<5} {p_cls_name:<22} {label:<9} {p['avg_rank']:<9.2f} {elo:<9.0f} {p['avg_score']:<9.2f} {p['games_played']:<6} {note_str:<9}")
-        print("-" * 110)
+            print(f"{i+1:<5} {p['id']:<5} {p_cls_name:<22} {label:<9} {p['avg_rank']:<9.2f} {p['rank_variance']:<9.2f} {elo:<9.0f} {p['avg_score']:<9.2f} {p['games_played']:<6} {note_str:<9}")
+        print("-" * 122)
 
 
 class RandomPartitionTournamentRunner(BaseTournamentRunner):
@@ -324,6 +332,7 @@ class RandomPartitionTournamentRunner(BaseTournamentRunner):
                 "is_baseline": self.player_configs[i].get("is_baseline", False),
                 "total_score": 0,
                 "total_rank": 0,
+                "total_rank_sq": 0,
                 "games_played": 0,
                 "matchups_played": 0,
                 "dq_count": 0,
@@ -574,7 +583,7 @@ class RandomPartitionTournamentRunner(BaseTournamentRunner):
                 continue
 
             res = outcome["result"]
-            scores, ranks, n_games, local_wins, local_dqs, local_timeouts, local_exceptions = res
+            scores, ranks, rank_squares, n_games, local_wins, local_dqs, local_timeouts, local_exceptions = res
             
             # Aggregate local pairwise wins
             for p1, opp_wins in local_wins.items():
@@ -595,6 +604,7 @@ class RandomPartitionTournamentRunner(BaseTournamentRunner):
                 global_p_id = combo[seat]
                 self.player_stats[global_p_id]["total_score"] += score
                 self.player_stats[global_p_id]["total_rank"] += ranks[seat]
+                self.player_stats[global_p_id]["total_rank_sq"] += rank_squares[seat]
                 self.player_stats[global_p_id]["games_played"] += n_games
                 self.player_stats[global_p_id]["matchups_played"] += 1
                 matchup_res_list.append({"id": global_p_id, "score": score, "rank": ranks[seat]})
@@ -633,6 +643,10 @@ class RandomPartitionTournamentRunner(BaseTournamentRunner):
         for p in self.player_stats:
             p["avg_score"] = p["total_score"] / p["games_played"] if p["games_played"] > 0 else float('inf')
             p["avg_rank"] = p["total_rank"] / p["games_played"] if p["games_played"] > 0 else float('inf')
+            p["rank_variance"] = (
+                p["total_rank_sq"] / p["games_played"] - p["avg_rank"] * p["avg_rank"]
+                if p["games_played"] > 0 else float('inf')
+            )
             p["calibrated_score"] = None
 
         has_calibrated_score = self._compute_baseline_scores()
@@ -641,12 +655,12 @@ class RandomPartitionTournamentRunner(BaseTournamentRunner):
         self.player_stats.sort(key=lambda x: (x["avg_rank"], x["avg_score"]))
         
         print(f"\nFinal Standings (Sorted by Avg Rank):")
-        line_width = 123 if has_calibrated_score else 110
+        line_width = 132 if has_calibrated_score else 122
         print("-" * line_width)
         if has_calibrated_score:
-            print(f"{'Rank':<5} {'ID':<5} {'Class':<22} {'Label':<9} {'Avg Rank':<9} {'Score':<8} {'Est. Elo':<9} {'Avg Score':<9} {'Games':<6} {'Note':<9}")
+            print(f"{'Rank':<5} {'ID':<5} {'Class':<22} {'Label':<9} {'Avg Rank':<9} {'Rank Var':<9} {'Score':<8} {'Est. Elo':<9} {'Avg Score':<9} {'Games':<6} {'Note':<9}")
         else:
-            print(f"{'Rank':<5} {'ID':<5} {'Class':<22} {'Label':<9} {'Avg Rank':<9} {'Est. Elo':<9} {'Avg Score':<9} {'Games':<6} {'Note':<9}")
+            print(f"{'Rank':<5} {'ID':<5} {'Class':<22} {'Label':<9} {'Avg Rank':<9} {'Rank Var':<9} {'Est. Elo':<9} {'Avg Score':<9} {'Games':<6} {'Note':<9}")
         print("-" * line_width)
         
         for i, p in enumerate(self.player_stats):
@@ -666,9 +680,9 @@ class RandomPartitionTournamentRunner(BaseTournamentRunner):
             elo = p.get("est_elo", 1500)
             if has_calibrated_score:
                 score_str = f"{p['calibrated_score']:.2f}" if p.get("calibrated_score") is not None and math.isfinite(p["calibrated_score"]) else "-"
-                print(f"{i+1:<5} {p['id']:<5} {p_cls_name:<22} {label:<9} {p['avg_rank']:<9.2f} {score_str:<8} {elo:<9.0f} {p['avg_score']:<9.2f} {p['games_played']:<6} {note_str:<9}")
+                print(f"{i+1:<5} {p['id']:<5} {p_cls_name:<22} {label:<9} {p['avg_rank']:<9.2f} {p['rank_variance']:<9.2f} {score_str:<8} {elo:<9.0f} {p['avg_score']:<9.2f} {p['games_played']:<6} {note_str:<9}")
             else:
-                print(f"{i+1:<5} {p['id']:<5} {p_cls_name:<22} {label:<9} {p['avg_rank']:<9.2f} {elo:<9.0f} {p['avg_score']:<9.2f} {p['games_played']:<6} {note_str:<9}")
+                print(f"{i+1:<5} {p['id']:<5} {p_cls_name:<22} {label:<9} {p['avg_rank']:<9.2f} {p['rank_variance']:<9.2f} {elo:<9.0f} {p['avg_score']:<9.2f} {p['games_played']:<6} {note_str:<9}")
         print("-" * line_width)
 
 
@@ -681,14 +695,18 @@ class GroupedRandomPartitionTournamentRunner(RandomPartitionTournamentRunner):
         for p in self.player_stats:
             p["total_score_1"] = 0
             p["total_rank_1"] = 0
+            p["total_rank_sq_1"] = 0
             p["games_played_1"] = 0
             p["avg_score_1"] = 0.0
             p["avg_rank_1"] = 0.0
+            p["rank_variance_1"] = 0.0
             p["total_score_2"] = 0
             p["total_rank_2"] = 0
+            p["total_rank_sq_2"] = 0
             p["games_played_2"] = 0
             p["avg_score_2"] = 0.0
             p["avg_rank_2"] = 0.0
+            p["rank_variance_2"] = 0.0
             p["group_id"] = -1
 
     def run(self):
@@ -704,8 +722,13 @@ class GroupedRandomPartitionTournamentRunner(RandomPartitionTournamentRunner):
         for p in self.player_stats:
             p["avg_score_1"] = p["total_score"] / p["games_played"] if p["games_played"] > 0 else float('inf')
             p["avg_rank_1"] = p["total_rank"] / p["games_played"] if p["games_played"] > 0 else float('inf')
+            p["rank_variance_1"] = (
+                p["total_rank_sq"] / p["games_played"] - p["avg_rank_1"] * p["avg_rank_1"]
+                if p["games_played"] > 0 else float('inf')
+            )
             p["total_score_1"] = p["total_score"]
             p["total_rank_1"] = p["total_rank"]
+            p["total_rank_sq_1"] = p["total_rank_sq"]
             p["games_played_1"] = p["games_played"]
             
         sorted_indices = sorted(all_indices, key=lambda i: (self.player_stats[i]["avg_rank_1"], self.player_stats[i]["avg_score_1"]))
@@ -732,11 +755,20 @@ class GroupedRandomPartitionTournamentRunner(RandomPartitionTournamentRunner):
         for p in self.player_stats:
             p["total_score_2"] = p["total_score"] - p["total_score_1"]
             p["total_rank_2"] = p["total_rank"] - p["total_rank_1"]
+            p["total_rank_sq_2"] = p["total_rank_sq"] - p["total_rank_sq_1"]
             p["games_played_2"] = p["games_played"] - p["games_played_1"]
             p["avg_score_2"] = p["total_score_2"] / p["games_played_2"] if p["games_played_2"] > 0 else float('inf')
             p["avg_rank_2"] = p["total_rank_2"] / p["games_played_2"] if p["games_played_2"] > 0 else float('inf')
+            p["rank_variance_2"] = (
+                p["total_rank_sq_2"] / p["games_played_2"] - p["avg_rank_2"] * p["avg_rank_2"]
+                if p["games_played_2"] > 0 else float('inf')
+            )
             p["avg_score"] = p["total_score"] / p["games_played"] if p["games_played"] > 0 else float('inf')
             p["avg_rank"] = p["total_rank"] / p["games_played"] if p["games_played"] > 0 else float('inf')
+            p["rank_variance"] = (
+                p["total_rank_sq"] / p["games_played"] - p["avg_rank"] * p["avg_rank"]
+                if p["games_played"] > 0 else float('inf')
+            )
             
         self.compute_elo(self.player_stats)
         return self.player_stats, {"stage1": history_1, "stage2": history_2}
@@ -745,9 +777,9 @@ class GroupedRandomPartitionTournamentRunner(RandomPartitionTournamentRunner):
         self.player_stats.sort(key=lambda x: (x["group_id"], x["avg_rank_2"], x["avg_score_2"]))
         
         print(f"\nFinal Standings (Sorted by Group, then Stage 2 Rank):")
-        print("-" * 132)
-        print(f"{'Grp':<3} {'Rank':<5} {'ID':<5} {'Class':<22} {'Label':<9} {'AvgRk 1':<8} {'AvgRk 2':<8} {'Est. Elo':<9} {'TotalG':<6} {'Note':<9}")
-        print("-" * 132)
+        print("-" * 150)
+        print(f"{'Grp':<3} {'Rank':<5} {'ID':<5} {'Class':<22} {'Label':<9} {'AvgRk 1':<8} {'VarRk 1':<8} {'AvgRk 2':<8} {'VarRk 2':<8} {'Est. Elo':<9} {'TotalG':<6} {'Note':<9}")
+        print("-" * 150)
         
         for i, p in enumerate(self.player_stats):
             p_cls_name = self.player_configs[p["config_idx"]]["class"]
@@ -765,5 +797,5 @@ class GroupedRandomPartitionTournamentRunner(RandomPartitionTournamentRunner):
             note_str = " ".join(notes)
             
             elo = p.get("est_elo", 1500)
-            print(f"{p['group_id']:<3} {i+1:<5} {p['id']:<5} {p_cls_name:<22} {label:<9} {p['avg_rank_1']:<8.2f} {p['avg_rank_2']:<8.2f} {elo:<9.0f} {p['games_played']:<6} {note_str:<9}")
-        print("-" * 132)
+            print(f"{p['group_id']:<3} {i+1:<5} {p['id']:<5} {p_cls_name:<22} {label:<9} {p['avg_rank_1']:<8.2f} {p['rank_variance_1']:<8.2f} {p['avg_rank_2']:<8.2f} {p['rank_variance_2']:<8.2f} {elo:<9.0f} {p['games_played']:<6} {note_str:<9}")
+        print("-" * 150)
