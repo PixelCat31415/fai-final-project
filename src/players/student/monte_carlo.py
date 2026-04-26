@@ -1,5 +1,6 @@
 import random
 import time
+from typing import override
 
 from src.players.student.customized_engine import CustomizedEngine
 from src.players.student.customized_engine import N_CARDS
@@ -37,24 +38,13 @@ class MonteCarloPlayer:
         self.rng.shuffle(shuffled)
 
         opponent_hands = []
-        offset = 0
-        for opponent_idx in range(N_PLAYERS):
-            if opponent_idx == self.player_idx:
-                continue
-            next_offset = offset + cards_per_opponent
-            opponent_hands.append(shuffled[offset:next_offset])
-            offset = next_offset
+        for i in range(N_PLAYERS - 1):
+            offset = i * cards_per_opponent
+            opponent_hands.append(shuffled[offset : offset + cards_per_opponent])
         return opponent_hands
 
-    def _draw_random_card(self, cards):
-        chosen_idx = self.rng.randrange(len(cards))
-        return cards.pop(chosen_idx)
-
-    def _final_rank(self, scores):
-        my_score = scores[self.player_idx]
-        lower = sum(score < my_score for score in scores)
-        ties = sum(score == my_score for score in scores) - 1
-        return 1.0 + lower + 0.5 * ties
+    def _min_target(self, engine: CustomizedEngine):
+        raise NotImplementedError
 
     def _rollout(self, history, own_hand, forced_first_card, unseen_cards):
         engine = CustomizedEngine()
@@ -63,20 +53,18 @@ class MonteCarloPlayer:
         remaining_cards = len(own_hand)
         opponent_hands = self._sample_opponent_hands(unseen_cards, remaining_cards)
         simulated_hands: list[list[int]] = []
-        opponent_hand_idx = 0
         for player_idx in range(N_PLAYERS):
             if player_idx == self.player_idx:
-                simulated_hands.append(own_hand[:])
-                self.rng.shuffle(simulated_hands[-1])
-                card_idx = own_hand.index(forced_first_card)
-                simulated_hands[-1][card_idx] = own_hand[0]
-                simulated_hands[-1][0] = forced_first_card
+                hand = own_hand[:]
+                self.rng.shuffle(hand)
+                card_idx = hand.index(forced_first_card)
+                hand[0], hand[card_idx] = hand[card_idx], hand[0]
+                simulated_hands.append(hand)
             else:
-                simulated_hands.append(opponent_hands[opponent_hand_idx])
-                opponent_hand_idx += 1
+                simulated_hands.append(opponent_hands.pop())
 
         engine.play_game(zip(*simulated_hands))
-        return self._final_rank(engine.scores)
+        return self._min_target(engine)
 
     def action(self, hand, history):
         if len(hand) == 1:
@@ -101,3 +89,19 @@ class MonteCarloPlayer:
             key=lambda card: (totals[card] / counts[card], counts[card] == 0, card),
         )
         return best_card
+
+class MCMinRankPlayer(MonteCarloPlayer):
+    @override
+    def _min_target(self, engine: CustomizedEngine):
+        # minimize final rank
+        scores = engine.scores
+        my_score = scores[self.player_idx]
+        lower = sum(score < my_score for score in scores)
+        ties = sum(score == my_score for score in scores) - 1
+        return 1.0 + lower + 0.5 * ties
+
+class MCMinScorePlayer(MonteCarloPlayer):
+    @override
+    def _min_target(self, engine: CustomizedEngine):
+        # minimize final score
+        return engine.scores[self.player_idx]
