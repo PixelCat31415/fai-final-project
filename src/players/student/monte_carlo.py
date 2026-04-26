@@ -4,7 +4,6 @@ import time
 from src.players.student.customized_engine import CustomizedEngine
 from src.players.student.customized_engine import N_CARDS
 from src.players.student.customized_engine import N_PLAYERS
-from src.players.student.customized_engine import N_ROUNDS
 
 
 class MonteCarloPlayer:

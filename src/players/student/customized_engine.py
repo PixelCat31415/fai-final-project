@@ -1,8 +1,5 @@
-import random
-import copy
-import time
-from typing import Any, cast
 from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
 
 # Mapping from card number to score
 def _default_score_mapping(n_cards: int):
@@ -91,13 +88,13 @@ class CustomizedEngine:
         self.scores[player_idx] += score_incurred
         return score_incurred
 
-    def play_round(self, played_cards: list[int]):
+    def play_round(self, played_cards: Sequence[int]):
         current_played_cards = list(enumerate(played_cards))
         current_played_cards.sort(key=lambda x: x[1])
         for p_idx, card in current_played_cards:
             self.process_card_placement(card, p_idx)
 
-    def play_game(self, played_cards_rounds: list[list[int]]):
+    def play_game(self, played_cards_rounds: Iterable[Sequence[int]]):
         assert self.round >= 0
         for played_cards in played_cards_rounds:
             self.play_round(played_cards)
